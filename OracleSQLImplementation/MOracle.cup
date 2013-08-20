@@ -1,0 +1,249 @@
+import java_cup.runtime.*;
+import java.util.*;
+
+parser code {:
+    public void report_error(String message, Object info) {
+        StringBuffer m = new StringBuffer("Error");
+        if (info instanceof java_cup.runtime.Symbol) {
+            java_cup.runtime.Symbol s = ((java_cup.runtime.Symbol) info);
+            if (s.left >= 0) {
+                m.append(" in line " + (s.left+1));
+            }
+        }
+        m.append(" : " + message);
+        //System.err.println(m);
+    }
+
+    public void report_fatal_error(String message, Object info)
+        throws Exception {
+        report_error(message, info);
+        Exception e = null;
+        throw e;
+        //System.exit(1);
+    }
+:};
+
+/*--------------DECLARATION OF TERMINALS AND NON-TERMINALS SECTION-----------*/
+/*-----------------------TEMINALS (tokens returned by scanner)---------------*/
+terminal            PERIOD, LPAREN, RPAREN, COMMA, SEMI, ERROR, STAR;
+terminal String     NAME, COMPARISON, NUMBER, STRING, VARIABLE, CREATE, TABLE,
+                    DATABASE, INSERT, INTO, VALUES, DELETE, FROM, WHERE, UPDATE, 
+                    SET, SELECT, VARCHAR, INTEGER, DECIMAL, AND, PATH;
+
+/* Non Terminals */
+
+non terminal Relation                 MOracle_expr;
+non terminal Relation                 create_db_expr;
+non terminal Relation                 create_tbl_expr;
+non terminal ArrayList<String>        attr_spec;
+non terminal String                   attr_type;
+non terminal ArrayList<String>        attr_list;
+non terminal ArrayList<String>        values_list;
+non terminal Relation                 delete_expr;
+non terminal Relation                 insert_expr;
+non terminal ArrayList<Condition>     condition;
+non terminal Relation                 update_expr;
+non terminal ArrayList<Condition>     set_expr;
+non terminal Relation                 select_expr;
+non terminal ArrayList<String>        tbl_list;
+
+/* Non-Terminals Used in Grammar Section */
+
+// TODO - fill in
+
+
+/* Parser Grammar - 
+ * create_statement := CREATE DATABASE name;
+ */
+
+/*---------------------------GRAMMAR SECTION----------------------------------*/
+MOracle_expr ::= create_db_expr:createDb
+    {: RESULT = createDb; :}
+    |
+    create_tbl_expr:createTbl
+    {: RESULT = createTbl; :}
+    |
+    insert_expr:insertExpr
+    {: RESULT = insertExpr; :}
+    |
+    delete_expr:deleteExpr
+    {: RESULT = deleteExpr; :}
+    |
+    update_expr:updateExpr
+    {: RESULT = updateExpr; :}
+    |
+    select_expr:selectExpr
+    {: RESULT = selectExpr; :} 
+;
+
+create_db_expr ::= CREATE DATABASE VARIABLE:dbName SEMI
+    {: Relation nullRel = Relation.createDatabase(dbName);
+       RESULT = nullRel; :}
+;
+
+create_tbl_expr ::= CREATE TABLE VARIABLE:tblName LPAREN attr_spec:attrS RPAREN SEMI
+    {: Relation rel = Relation.createTable(tblName, attrS);
+       RESULT = rel; :}
+;
+
+attr_spec ::= VARIABLE:var attr_type:attT
+    {: ArrayList<String> attrSpecs = new ArrayList<String>();
+       attrSpecs.add(var + " " + attT);
+       RESULT = attrSpecs; :}
+    |
+    attr_spec:attrS COMMA VARIABLE:var attr_type:attT 
+    {: ArrayList<String> attrSpecs = new ArrayList<String>();
+       attrSpecs.addAll(attrS);
+       attrSpecs.add(var + " " + attT);
+       RESULT = attrSpecs; :}
+;
+
+attr_type ::= VARCHAR LPAREN NUMBER:len RPAREN
+    {: String attType = "VARCHAR(" + len + ")";
+       RESULT = attType; :}
+    |
+    INTEGER
+    {: String attType = "INTEGER";
+       RESULT  = attType; :}
+    |
+    DECIMAL
+    {: String attType = "DECIMAL";
+       RESULT = attType; :}
+;
+
+insert_expr ::= INSERT INTO  VARIABLE:tblName LPAREN attr_list:attrL RPAREN 
+    VALUES LPAREN values_list:valueL RPAREN SEMI 
+    {: Relation r = GrammarDriver.insertTuple(tblName, attrL, valueL);
+       RESULT = r; :}
+;
+
+attr_list ::= VARIABLE:attrName
+    {: ArrayList<String> attrs = new ArrayList<String>();
+       attrs.add(attrName);
+       RESULT = attrs; :}
+    |
+    attr_list:attrL COMMA VARIABLE:attrName
+    {: ArrayList<String> attrs = new ArrayList<String>();
+       attrs.addAll(attrL);
+       attrs.add(attrName);
+       RESULT = attrs; :}
+    |
+    STAR
+    {: ArrayList<String> attrs = new ArrayList<String>();
+       attrs.add("*");
+       RESULT = attrs; :}
+;
+
+values_list ::= STRING:val
+    {: ArrayList<String> vals = new ArrayList<String>();
+       val = val.substring(1, val.length()-1);
+       vals.add(val);
+       RESULT = vals; :}
+    | 
+    NUMBER:val
+    {: ArrayList<String> vals = new ArrayList<String>();
+       vals.add(val);
+       RESULT = vals; :}
+    |
+    values_list:valueL COMMA STRING:val
+    {: ArrayList<String> vals = new ArrayList<String>();
+       val = val.substring(1, val.length()-1);
+       vals.addAll(valueL);
+       vals.add(val);
+       RESULT = vals; :}
+    |
+    values_list:valueL COMMA NUMBER:val
+    {: ArrayList<String> vals = new ArrayList<String>();
+       vals.addAll(valueL);
+       vals.add(val);
+       RESULT = vals; :}
+;
+
+delete_expr ::= DELETE FROM VARIABLE:tblName WHERE condition:conds SEMI
+    {: Relation r = GrammarDriver.deleteTuple(tblName, conds);
+       RESULT = r; :}
+;
+
+condition ::= VARIABLE:attr COMPARISON:comp STRING:val
+    {: ArrayList<Condition> condsList = new ArrayList<Condition>();
+       val = val.substring(1, val.length() - 1);
+       Condition cond = new Condition(attr, comp, val);
+       condsList.add(cond);
+       RESULT = condsList; :}
+    |
+    VARIABLE:attr COMPARISON:comp NUMBER:val
+    {: ArrayList<Condition> condsList = new ArrayList<Condition>();
+       Condition cond = new Condition(attr, comp, val);
+       condsList.add(cond);
+       RESULT = condsList; :}
+    |
+    condition:conds AND VARIABLE:attr COMPARISON:comp STRING:val
+    {: ArrayList<Condition> condsList = new ArrayList<Condition>();
+       val = val.substring(1, val.length() - 1);
+       Condition cond = new Condition(attr, comp, val);
+       condsList.addAll(conds);
+       condsList.add(cond);
+       RESULT = condsList; :}
+    |
+    condition:conds AND VARIABLE:attr COMPARISON:comp NUMBER:val
+    {: ArrayList<Condition> condsList = new ArrayList<Condition>();
+       Condition cond = new Condition(attr, comp, val);
+       condsList.addAll(conds);
+       condsList.add(cond);
+       RESULT = condsList; :}
+;
+
+update_expr ::= UPDATE VARIABLE:tblName SET set_expr:setE WHERE condition:cond SEMI
+    {: Relation r = GrammarDriver.update(tblName, setE, cond);
+       RESULT = r; :}
+;
+
+set_expr ::= VARIABLE:attr COMPARISON:comp STRING:val
+    {: ArrayList<Condition> sets = new ArrayList<Condition>();
+       val = val.substring(1, val.length()-1);
+       Condition set = new Condition(attr, comp, val);
+       sets.add(set);
+       RESULT = sets; :}
+    |
+    VARIABLE:attr COMPARISON:comp NUMBER:val
+    {: ArrayList<Condition> sets = new ArrayList<Condition>();
+       Condition set = new Condition(attr, comp, val);
+       sets.add(set);
+       RESULT = sets; :}
+    |
+    set_expr:setE COMMA VARIABLE:attr COMPARISON:comp STRING:val
+    {: ArrayList<Condition> sets = new ArrayList<Condition>();
+       val = val.substring(1, val.length()-1);
+       Condition set = new Condition(attr, comp, val);
+       sets.addAll(setE);
+       sets.add(set);
+       RESULT = sets; :}
+    |
+    set_expr:setE COMMA VARIABLE:attr COMPARISON:comp NUMBER:val
+    {: ArrayList<Condition> sets = new ArrayList<Condition>();
+       Condition set = new Condition(attr, comp, val);
+       sets.addAll(setE);
+       sets.add(set);
+       RESULT = sets; :}
+;
+
+select_expr ::= SELECT attr_list:attrL FROM tbl_list:tblL SEMI
+    {: Relation rel = GrammarDriver.SQLSelect(attrL, tblL);
+       RESULT = rel; :}
+    |
+    SELECT attr_list:attrL FROM tbl_list:tblL WHERE condition:cond SEMI
+    {: Relation rel = GrammarDriver.SQLSelect(attrL, cond, tblL);
+       RESULT = rel; :}
+;
+
+tbl_list ::= VARIABLE:tblName
+    {: ArrayList<String> tbls = new ArrayList<String>();
+       tbls.add(tblName);
+       RESULT = tbls; :}
+    |
+    tbl_list:tblL COMMA VARIABLE:tblName
+    {: ArrayList<String> tbls = new ArrayList<String>();
+       tbls.addAll(tblL);
+       tbls.add(tblName);
+       RESULT = tbls; :}
+;
